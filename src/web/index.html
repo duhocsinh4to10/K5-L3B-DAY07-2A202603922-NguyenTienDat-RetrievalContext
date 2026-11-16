@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VinAI Day 7 — Agentic RAG Web Explorer</title>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --bg-chat: #0b1120;
+      --border: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --accent-dim: rgba(56, 189, 248, 0.12);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --green: #10b981;
+      --green-dim: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245, 158, 11, 0.15);
+      --red: #ef4444;
+      --citation: #818cf8;
+      --citation-dim: rgba(129, 140, 248, 0.2);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      color: #0f172a;
+      font-weight: 800;
+      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      letter-spacing: 0.5px;
+    }
+    .header-titles h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+    .header-titles p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .status-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .pulse-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--green-dim);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 20px;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Main Container */
+    .app-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      overflow: hidden;
+    }
+
+    /* Left Chat Area */
+    .chat-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--bg-chat);
+      position: relative;
+    }
+    .corpus-tabs {
+      display: flex;
+      background: #0f172a;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      gap: 10px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      background: var(--accent-dim);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .message-row {
+      display: flex;
+      gap: 14px;
+      max-width: 90%;
+    }
+    .message-row.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    .message-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .user .message-avatar {
+      background: #4f46e5;
+      color: white;
+    }
+    .agent .message-avatar {
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: white;
+    }
+    .message-bubble {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-size: 14px;
+      line-height: 1.6;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .user .message-bubble {
+      background: #312e81;
+      border-color: #4338ca;
+      color: #e0e7ff;
+    }
+
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .status-tag.answered {
+      background: var(--green-dim);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .status-tag.abstain {
+      background: var(--amber-dim);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .citation-chip {
+      display: inline-block;
+      background: var(--citation-dim);
+      border: 1px solid rgba(129, 140, 248, 0.4);
+      color: #a5b4fc;
+      padding: 1px 6px;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 0 2px;
+      transition: all 0.15s;
+    }
+    .citation-chip:hover {
+      background: var(--citation);
+      color: #0f172a;
+    }
+
+    .msg-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 8px;
+    }
+
+    /* Samples / Quick Prompts */
+    .sample-prompts {
+      padding: 8px 24px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+      background: #0f172a;
+      border-top: 1px solid var(--border);
+    }
+    .sample-pill {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sample-pill:hover {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .sample-pill.abstain-pill {
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fcd34d;
+    }
+
+    /* Chat Input Form */
+    .chat-input-box {
+      padding: 16px 24px 20px;
+      background: var(--bg-dark);
+      display: flex;
+      gap: 12px;
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 18px;
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .chat-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+    .send-btn {
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      border: none;
+      color: white;
+      font-weight: 700;
+      padding: 0 22px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: opacity 0.2s;
+    }
+    .send-btn:hover { opacity: 0.9; }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Right Evidence Panel */
+    .inspector-panel {
+      background: #0f172a;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-header h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: #cbd5e1;
+    }
+    .panel-tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .panel-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    .panel-tab.active {
+      background: var(--bg-card);
+      color: var(--accent);
+    }
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Chunk Card */
+    .chunk-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .chunk-card.highlight {
+      border-color: var(--citation);
+      background: rgba(99, 102, 241, 0.15);
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+    }
+    .chunk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chunk-id {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .chunk-score {
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #94a3b8;
+    }
+    .chunk-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .chunk-snippet {
+      color: #cbd5e1;
+      line-height: 1.5;
+      max-height: 120px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 8px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Trace Step */
+    .trace-step {
+      background: var(--bg-card);
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 12px;
+    }
+    .trace-title {
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+    }
+    .trace-desc {
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    /* Loader */
+    .typing-indicator {
+      display: flex;
+      gap: 5px;
+      padding: 10px;
+      align-items: center;
+    }
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-group">
+      <div class="logo-badge">VinAI Day 7</div>
+      <div class="header-titles">
+        <h1>Agentic Retrieval & Context Engineering Explorer</h1>
+        <p>Sinh viên: <b>Nguyễn Tiến Đạt</b> (MSSV: 2A202603922 — Lớp L3B)</p>
+      </div>
+    </div>
+    <div class="status-group">
+      <div class="pulse-pill">
+        <div class="pulse-dot"></div>
+        <span id="gemini-status">Google Gemini 3.5 Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Container -->
+  <div class="app-container">
+    <!-- Chat Area -->
+    <div class="chat-panel">
+      <!-- Corpus Tabs -->
+      <div class="corpus-tabs">
+        <button class="tab-btn active" id="tab-nist" onclick="switchCorpus('nist')">
+          📘 NIST AI RMF 1.0 (Core Day 7 — 162 chunks)
+        </button>
+        <button class="tab-btn" id="tab-gsdr" onclick="switchCorpus('gsdr')">
+          🌍 UN GSDR 2023 (Thử thách Nâng cao 224 trang — 220 chunks)
+        </button>
+      </div>
+
+      <!-- Messages Thread -->
+      <div class="chat-messages" id="chat-messages">
+        <!-- Welcome Message -->
+        <div class="message-row agent">
+          <div class="message-avatar">🤖</div>
+          <div class="message-bubble">
+            <div class="status-tag answered">Agent Online</div>
+            <p>Xin chào <b>Nguyễn Tiến Đạt</b>! Hệ thống Agentic RAG đã sẵn sàng phục vụ:</p>
+            <ul style="margin: 8px 0 8px 20px; font-size: 13px; color: #cbd5e1;">
+              <li><b>Hybrid RRF Retrieval:</b> Kết hợp Dense Embeddings <code>bge-small-en-v1.5</code> và BM25 Okapi Lexical.</li>
+              <li><b>Context Engineering:</b> Budget packing, trích dẫn chính xác <code>[chunk-id]</code>.</li>
+              <li><b>Controller:</b> Tích hợp <b>Google Gemini API</b> (kèm fallback reasoning).</li>
+              <li><b>Abstention Enforcement:</b> Tự động từ chối khi tài liệu không chứa đủ bằng chứng.</li>
+            </ul>
+            <p style="font-size: 13px; color: #94a3b8;">Chọn câu hỏi mẫu bên dưới hoặc nhập câu hỏi bất kỳ để bắt đầu kiểm thử!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sample Prompts -->
+      <div class="sample-prompts" id="sample-prompts">
+        <!-- Dynamically injected -->
+      </div>
+
+      <!-- Input Area -->
+      <form class="chat-input-box" onsubmit="handleSend(event)">
+        <input 
+          type="text" 
+          id="query-input" 
+          class="chat-input" 
+          placeholder="Nhập câu hỏi của bạn (ví dụ: 'What are the four Core functions?')..." 
+          autocomplete="off"
+        />
+        <button type="submit" id="send-button" class="send-btn">
+          <span>Gửi</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <!-- Right Inspector Panel -->
+    <div class="inspector-panel">
+      <div class="panel-header">
+        <h2>BẰNG CHỨNG & VẾT THỰC THI</h2>
+        <div class="panel-tabs">
+          <button class="panel-tab active" id="tab-chunks" onclick="switchInspectorTab('chunks')">Chunks (<span id="chunk-count">0</span>)</button>
+          <button class="panel-tab" id="tab-traces" onclick="switchInspectorTab('traces')">Trace Steps</button>
+        </div>
+      </div>
+      <div class="panel-body" id="inspector-body">
+        <div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+          Chưa có truy vấn. Hãy gửi câu hỏi để xem chi tiết các chunks được Agent trích xuất và vết suy luận!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentCorpus = 'nist';
+    let currentTab = 'chunks';
+    let lastResponse = null;
+
+    const samples = {
+      nist: [
+        { text: "What are the four Core functions described in Part 2 of the AI RMF?", isAbstain: false },
+        { text: "What must organizational leadership foster in the GOVERN function?", isAbstain: false },
+        { text: "What is the specific financial penalty in USD imposed by NIST for non-compliance?", isAbstain: true, label: "⚠️ Test Abstention: Penalty USD" },
+        { text: "How should treatment of documented AI risks be prioritized under MANAGE 1.2?", isAbstain: false },
+        { text: "What are the key elements under MEASURE 2.2?", isAbstain: false }
+      ],
+      gsdr: [
+        { text: "According to Figure 4-1, what are the four distinct phases in the systematic approach?", isAbstain: false },
+        { text: "According to Table 1-2, how many targets are tracked under SDG 7?", isAbstain: false },
+        { text: "According to Figure 3-5, what are the three macro-demographic phases?", isAbstain: false },
+        { text: "What is the secret launch code mentioned in Chapter 9 for the UN space mission?", isAbstain: true, label: "⚠️ Test Abstention: Out-of-domain" },
+        { text: "According to Box 1-3, what does the report highlight regarding systemic risks?", isAbstain: false }
+      ]
+    };
+
+    function renderSamplePrompts() {
+      const container = document.getElementById('sample-prompts');
+      container.innerHTML = '';
+      const list = samples[currentCorpus] || [];
+      list.forEach(item => {
+        const btn = document.createElement('div');
+        btn.className = `sample-pill ${item.isAbstain ? 'abstain-pill' : ''}`;
+        btn.textContent = item.label || item.text;
+        btn.onclick = () => {
+          document.getElementById('query-input').value = item.text;
+          handleSend(new Event('submit'));
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function switchCorpus(corpus) {
+      currentCorpus = corpus;
+      document.getElementById('tab-nist').classList.toggle('active', corpus === 'nist');
+      document.getElementById('tab-gsdr').classList.toggle('active', corpus === 'gsdr');
+      renderSamplePrompts();
+      appendBotNotice(`Đã chuyển kho tri thức sang: <b>${corpus === 'nist' ? 'NIST AI RMF 1.0 (Core)' : 'UN GSDR 2023 (Thử thách Nâng cao 224 trang)'}</b>.`);
+    }
+
+    function switchInspectorTab(tab) {
+      currentTab = tab;
+      document.getElementById('tab-chunks').classList.toggle('active', tab === 'chunks');
+      document.getElementById('tab-traces').classList.toggle('active', tab === 'traces');
+      renderInspector();
+    }
+
+    function appendBotNotice(html) {
+      const chat = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = 'message-row agent';
+      div.innerHTML = `
+        <div class="message-avatar">💡</div>
+        <div class="message-bubble" style="font-size: 13px; color: #94a3b8; background: rgba(30, 41, 59, 0.4);">
+          ${html}
+        </div>
+      `;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function formatCitationsInAnswer(text, citations) {
+      let formatted = text;
+      // Replace [chunk-id] with clickable chips
+      const regex = /\[([a-zA-Z0-9_\-\.\/]+)\]/g;
+      formatted = formatted.replace(regex, (match, cid) => {
+        return `<span class="citation-chip" onclick="highlightChunk('${cid}')">[${cid}]</span>`;
+      });
+      return formatted;
+    }
+
+    function highlightChunk(cid) {
+      switchInspectorTab('chunks');
+      const cards = document.querySelectorAll('.chunk-card');
+      cards.forEach(card => {
+        if (card.dataset.cid === cid) {
+          card.classList.add('highlight');
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          card.classList.remove('highlight');
+        }
+      });
+    }
+
+    function renderInspector() {
+      const container = document.getElementById('inspector-body');
+      if (!lastResponse) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">Chưa có dữ liệu truy vấn.</div>`;
+        return;
+      }
+
+      if (currentTab === 'chunks') {
+        const chunks = lastResponse.retrieved_chunks || [];
+        document.getElementById('chunk-count').textContent = chunks.length;
+        if (chunks.length === 0) {
+          container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px;">Không có chunks nào được lấy.</div>`;
+          return;
+        }
+
+        let html = '';
+        chunks.forEach((c, idx) => {
+          const isCited = (lastResponse.citations || []).includes(c.id);
+          html += `
+            <div class="chunk-card ${isCited ? 'highlight' : ''}" data-cid="${c.id}">
+              <div class="chunk-header">
+                <span class="chunk-id">#${idx+1} [${c.id}]</span>
+                <span class="chunk-score">RRF: ${(c.score || 0).toFixed(4)}</span>
+              </div>
+              <div class="chunk-meta">
+                <span>📄 Trang: <b>${c.page ?? 'N/A'}</b></span> • 
+                <span>Loại: <b>${c.metadata?.chunk_type || 'text'}</b></span> • 
+                <span>Nguồn: <b>${c.source?.split('/').pop() || 'file'}</b></span>
+              </div>
+              <div class="chunk-snippet">${c.text || ''}</div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      } else {
+        // Trace steps
+        const events = lastResponse.events || [];
+        let html = '';
+        events.forEach((ev, idx) => {
+          const type = ev.event;
+          if (type === 'search') {
+            html += `
+              <div class="trace-step">
+                <div class="trace-title">Bước ${idx+1}: Tool Call — search()</div>
+                <div class="trace-desc">Query: "${ev.query}"<br>Top-K candidates: ${ev.results?.length || 0}<br>Context packed: [${(ev.context_ids || []).join(', ')}]</div>
+              </div>
+            `;
+          } else if (type === 'answer') {
+            html += `
+              <div class="trace-step" style="border-left-color: var(--green);">
+                <div class="trace-title">Bước ${idx+1}: Sinh câu trả lời (Grounded Answer)</div>
+                <div class="trace-desc">Citations: [${(lastResponse.citations || []).join(', ')}]</div>
+              </div>
+            `;
+          } else if (type === 'invalid_or_missing_citations') {
+            html += `
+              <div class="trace-step" style="border-left-color: var(--amber);">
+                <div class="trace-title">Bước ${idx+1}: Quyết định Từ chối (Abstention)</div>
+                <div class="trace-desc">Lý do: Không đủ bằng chứng hoặc câu hỏi nằm ngoài phạm vi tài liệu.</div>
+              </div>
+            `;
+          }
+        });
+        container.innerHTML = html || `<div style="color: var(--text-muted); font-size: 13px;">Không có vết thực thi.</div>`;
+      }
+    }
+
+    async function handleSend(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('query-input');
+      const question = input.value.trim();
+      if (!question) return;
+
+      input.value = '';
+      const sendBtn = document.getElementById('send-button');
+      sendBtn.disabled = true;
+
+      const chat = document.getElementById('chat-messages');
+
+      // Append User message
+      const userRow = document.createElement('div');
+      userRow.className = 'message-row user';
+      userRow.innerHTML = `
+        <div class="message-avatar">Đạt</div>
+        <div class="message-bubble">${question}</div>
+      `;
+      chat.appendChild(userRow);
+
+      // Append Typing Indicator
+      const typingRow = document.createElement('div');
+      typingRow.className = 'message-row agent';
+      typingRow.id = 'typing-indicator-row';
+      typingRow.innerHTML = `
+        <div class="message-avatar">🤖</div>
+        <div class="message-bubble">
+          <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+      chat.appendChild(typingRow);
+      chat.scrollTop = chat.scrollHeight;
+
+      const startTime = performance.now();
+
+      try {
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: question,
+            corpus: currentCorpus,
+            top_k: 5,
+            budget: currentCorpus === 'nist' ? 1200 : 1500
+          })
+        });
+
+        const data = await resp.json();
+        const latency = Math.round(performance.now() - startTime);
+
+        // Remove typing
+        const tRow = document.getElementById('typing-indicator-row');
+        if (tRow) tRow.remove();
+
+        lastResponse = data;
+        renderInspector();
+
+        // Append Agent Response
+        const isAnswered = data.status === 'answered';
+        const agentRow = document.createElement('div');
+        agentRow.className = 'message-row agent';
+
+        const formattedAnswer = formatCitationsInAnswer(data.answer || '', data.citations || []);
+
+        agentRow.innerHTML = `
+          <div class="message-avatar">🤖</div>
+          <div class="message-bubble">
+            <div class="status-tag ${isAnswered ? 'answered' : 'abstain'}">
+              ${isAnswered ? '✅ Answered with Grounded Evidence' : '⚠️ Abstained: Insufficient Evidence'}
+            </div>
+            <div style="margin-top: 4px;">${formattedAnswer}</div>
+            <div class="msg-meta">
+              <span>⏱️ Độ trễ: <b>${latency} ms</b></span>
+              <span>📚 Kho: <b>${currentCorpus.toUpperCase()}</b></span>
+              <span>🔖 Trích dẫn: <b>${(data.citations || []).length} chunks</b></span>
+            </div>
+          </div>
+        `;
+        chat.appendChild(agentRow);
+        chat.scrollTop = chat.scrollHeight;
+
+      } catch (err) {
+        const tRow = document.getElementById('typing-indicator-row');
+        if (tRow) tRow.remove();
+
+        const errRow = document.createElement('div');
+        errRow.className = 'message-row agent';
+        errRow.innerHTML = `
+          <div class="message-avatar">⚠️</div>
+          <div class="message-bubble" style="border-color: var(--red); color: #fca5a5;">
+            Lỗi kết nối đến máy chủ Agent: ${err.message}
+          </div>
+        `;
+        chat.appendChild(errRow);
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    // Init
+    renderSamplePrompts();
+  </script>
+</body>
+</html>

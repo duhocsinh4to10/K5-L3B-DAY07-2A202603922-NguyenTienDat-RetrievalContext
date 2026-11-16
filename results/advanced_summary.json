@@ -1,0 +1,48 @@
+{
+  "total_pages_indexed": 224,
+  "document": "Global Sustainable Development Report (GSDR) 2023",
+  "document_url": "https://sdgs.un.org/sites/default/files/2023-09/FINAL%20GSDR%202023-Digital%20-110923_1.pdf",
+  "dev_evaluation": {
+    "total": 18,
+    "passed": 15,
+    "pass_rate": "83.3%"
+  },
+  "test_evaluation": {
+    "total": 30,
+    "passed": 28,
+    "pass_rate": "93.3%",
+    "meets_90_percent_threshold": true,
+    "groups": {
+      "table": {
+        "n": 6,
+        "passed": 6,
+        "pass_rate": "100.0%"
+      },
+      "figure": {
+        "n": 5,
+        "passed": 4,
+        "pass_rate": "80.0%"
+      },
+      "chart": {
+        "n": 5,
+        "passed": 4,
+        "pass_rate": "80.0%"
+      },
+      "multi-hop": {
+        "n": 4,
+        "passed": 4,
+        "pass_rate": "100.0%"
+      },
+      "text": {
+        "n": 4,
+        "passed": 4,
+        "pass_rate": "100.0%"
+      },
+      "abstain": {
+        "n": 6,
+        "passed": 6,
+        "pass_rate": "100.0%"
+      }
+    }
+  }
+}

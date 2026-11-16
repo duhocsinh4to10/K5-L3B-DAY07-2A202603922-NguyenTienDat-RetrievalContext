@@ -1,0 +1,290 @@
+[
+  {
+    "id": "q01",
+    "split": "dev",
+    "question": "What are the four Core functions described in Part 2 of the AI RMF?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 8,
+        "evidence": "These functions - GOVERN ,\nMAP, MEASURE , and MANAGE - are broken down further into categories and subcategories."
+      }
+    ],
+    "expected_answer": "GOVERN, MAP, MEASURE, and MANAGE",
+    "filter": null
+  },
+  {
+    "id": "q02",
+    "split": "dev",
+    "question": "How does ISO/IEC TS 5723:2022 define accuracy in the context of AI validity?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 19,
+        "evidence": "Accuracy is defined by ISO /IEC TS 5723:2022 as “closeness of results of observations,\ncomputations, or estimates to the true values or the values accepted as being true.”"
+      }
+    ],
+    "expected_answer": "Closeness of results of observations, computations, or estimates to the true values or the values accepted as being true",
+    "filter": null
+  },
+  {
+    "id": "q03",
+    "split": "dev",
+    "question": "What are the three major categories of AI bias identified by NIST?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 23,
+        "evidence": "three major categories of AI bias to be considered and managed: systemic, computational\nand statistical, and human-cognitive."
+      }
+    ],
+    "expected_answer": "Systemic, computational and statistical, and human-cognitive bias",
+    "filter": null
+  },
+  {
+    "id": "q04",
+    "split": "dev",
+    "question": "What is the definition and role of risk tolerance according to Section 1.2.2?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 12,
+        "evidence": "Risk\ntolerance refers to the organization’s or AI actor’s (see Appendix A) readiness to bear the\nrisk in order to achieve its objectives."
+      }
+    ],
+    "expected_answer": "The readiness of an organization or AI actor to bear risk in order to achieve its objectives",
+    "filter": null
+  },
+  {
+    "id": "q05",
+    "split": "dev",
+    "question": "How is the GOVERN function characterized in relation to other AI risk management functions?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 27,
+        "evidence": "GOVERN is a cross-cutting function that is infused throughout AI risk management and\nenables the other functions of the process."
+      }
+    ],
+    "expected_answer": "A cross-cutting function infused throughout AI risk management that enables all other functions",
+    "filter": {
+      "section": "govern"
+    }
+  },
+  {
+    "id": "q06",
+    "split": "dev",
+    "question": "What action should organizations take when an AI system presents unacceptable negative risk levels?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 13,
+        "evidence": "In cases where an AI system presents unacceptable\nnegative risk levels - such as where significant negative impacts are imminent, severe harms\nare actually occurring, or catastrophic risks are present - development and deployment\nshould cease in a safe manner until risks can be sufficiently managed."
+      }
+    ],
+    "expected_answer": "Development and deployment should cease in a safe manner until risks can be sufficiently managed",
+    "filter": null
+  },
+  {
+    "id": "q07",
+    "split": "dev",
+    "question": "What are practical approaches for AI safety mentioned in Section 3.2?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 20,
+        "evidence": "practical approaches for AI safety often relate to rigorous simulation and in-domain\ntesting, real-time monitoring, and the ability to shut down, modify, or have human intervention"
+      }
+    ],
+    "expected_answer": "Rigorous simulation and in-domain testing, real-time monitoring, and the ability to shut down, modify, or intervene",
+    "filter": null
+  },
+  {
+    "id": "q08",
+    "split": "dev",
+    "question": "How can organizations mitigate risks to interpretability in AI systems?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 22,
+        "evidence": "Risks to interpretability often can be addressed by communicating a description of why\nan AI system made a particular prediction or recommendation."
+      }
+    ],
+    "expected_answer": "By communicating a description of why an AI system made a particular prediction or recommendation",
+    "filter": null
+  },
+  {
+    "id": "q09",
+    "split": "dev",
+    "question": "Does system transparency automatically guarantee that a system is safe, accurate, or fair?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 21,
+        "evidence": "transparent system is not necessarily an accurate,\nprivacy-enhanced, secure, or fair system."
+      }
+    ],
+    "expected_answer": "No, a transparent system is not necessarily accurate, privacy-enhanced, secure, or fair",
+    "filter": null
+  },
+  {
+    "id": "q10",
+    "split": "dev",
+    "question": "Can AI bias occur without prejudice, partiality, or discriminatory intent?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 23,
+        "evidence": "Each of these can occur in the absence of prejudice,\npartiality, or discriminatory intent."
+      }
+    ],
+    "expected_answer": "Yes, systemic, computational/statistical, and human-cognitive bias can occur without prejudice or intent",
+    "filter": {
+      "section": "trustworthiness"
+    }
+  },
+  {
+    "id": "q11",
+    "split": "dev",
+    "question": "What is the primary purpose of carrying out the MAP function?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 30,
+        "evidence": "carrying out the MAP function enables negative risk prevention and informs decisions for processes such as model management"
+      }
+    ],
+    "expected_answer": "To gather information that enables negative risk prevention and informs decisions for the MEASURE and MANAGE functions",
+    "filter": null
+  },
+  {
+    "id": "q12",
+    "split": "dev",
+    "question": "What does category MAP 1 focus on?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 31,
+        "evidence": "MAP 1: Context is\nestablished and\nunderstood."
+      }
+    ],
+    "expected_answer": "Establishing and understanding context",
+    "filter": null
+  },
+  {
+    "id": "q13",
+    "split": "dev",
+    "question": "Where are detailed practices for measuring AI risks described?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 34,
+        "evidence": "measuring AI risks are described in the NIST AI RMF Playbook."
+      }
+    ],
+    "expected_answer": "In the NIST AI RMF Playbook",
+    "filter": null
+  },
+  {
+    "id": "q14",
+    "split": "dev",
+    "question": "According to subcategory MEASURE 2.6, how should AI safety risks be evaluated?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 35,
+        "evidence": "MEASURE 2.6: The AI system is evaluated regularly for safety\nrisks - as identified in theMAP function."
+      }
+    ],
+    "expected_answer": "Regularly evaluated for safety risks identified in the MAP function to demonstrate residual negative risk does not exceed tolerance",
+    "filter": {
+      "section": "measure"
+    }
+  },
+  {
+    "id": "q15",
+    "split": "dev",
+    "question": "What does subcategory GOVERN 1.5 require regarding the risk management process?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 28,
+        "evidence": "GOVERN 1.5: Ongoing monitoring and periodic review of the\nrisk management process and its outcomes are planned and organizational roles and responsibilities clearly defined"
+      }
+    ],
+    "expected_answer": "Ongoing monitoring and periodic review of the process and outcomes, with clearly defined organizational roles and responsibilities",
+    "filter": null
+  },
+  {
+    "id": "q16",
+    "split": "test",
+    "question": "How should treatment of documented AI risks be prioritized under subcategory MANAGE 1.2?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 37,
+        "evidence": "Treatment of documented AI risks is prioritized\nbased on impact, likelihood, and available resources or methods."
+      }
+    ],
+    "expected_answer": "Prioritized based on impact, likelihood, and available resources or methods",
+    "filter": null
+  },
+  {
+    "id": "q17",
+    "split": "test",
+    "question": "What are AI RMF cross-sectoral profiles designed to cover?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 39,
+        "evidence": "cross-sectoral profilescover risks of models or applications that can be used across\nuse cases or sectors."
+      }
+    ],
+    "expected_answer": "Risks of models or applications that can be used across use cases or sectors",
+    "filter": null
+  },
+  {
+    "id": "q18",
+    "split": "test",
+    "question": "What does category MANAGE 4 encompass regarding risk treatments?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 38,
+        "evidence": "MANAGE 4: Risk\ntreatments,\nincluding response\nand recovery, and\ncommunication\nplans for the\nidentified and\nmeasured AI risks\nare documented and\nmonitored regularly."
+      }
+    ],
+    "expected_answer": "Risk treatments, including response and recovery, and communication plans for identified and measured risks are documented and monitored regularly",
+    "filter": {
+      "section": "manage"
+    }
+  },
+  {
+    "id": "q19",
+    "split": "test",
+    "question": "Under what conditions do AI risks call for the most urgent prioritization and thorough management?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 13,
+        "evidence": "When applying the AI RMF, risks which the organization determines to be highest for the\nAI systems within a given context of use call for the most urgent prioritization and most\nthorough risk management process."
+      }
+    ],
+    "expected_answer": "When risks are determined to be highest for AI systems within a given context of use",
+    "filter": null
+  },
+  {
+    "id": "q20",
+    "split": "test",
+    "question": "Why is attention to governance considered an intrinsic requirement for AI risk management?",
+    "gold": [
+      {
+        "source_id": "nist-ai-rmf-1.0",
+        "page": 27,
+        "evidence": "Attention\nto governance is a continual and intrinsic requirement for effective AI risk management\nover an AI system’s lifespan and the organization’s hierarchy."
+      }
+    ],
+    "expected_answer": "Because governance is a continual and intrinsic requirement for effective AI risk management over an AI system’s lifespan and the organization’s hierarchy",
+    "filter": null
+  }
+]

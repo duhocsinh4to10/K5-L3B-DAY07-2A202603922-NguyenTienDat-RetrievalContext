@@ -6,7 +6,8 @@ import re
 import statistics
 import time
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
+from heapq import nsmallest
 from pathlib import Path
 
 
@@ -48,7 +49,13 @@ def validate(chunks, questions):
 
 
 def hit(chunk, gold):
-    return any(chunk['source_id'] == g['source_id'] and chunk['page'] == g['page'] and g['evidence'] in chunk['text'] for g in gold)
+    return any(
+        isinstance(g.get('evidence'), str) and g['evidence']
+        and chunk['source_id'] == g['source_id']
+        and chunk['page'] == g['page']
+        and g['evidence'] in chunk['text']
+        for g in gold
+    )
 
 
 class TfidfIndex:
@@ -57,7 +64,13 @@ class TfidfIndex:
         counts = [Counter(tokenize(c['text'])) for c in chunks]
         df = Counter(term for row in counts for term in row)
         self.idf = {term: math.log((1 + len(chunks)) / (1 + count)) + 1 for term, count in df.items()}
-        self.vectors = [self._vector(row) for row in counts]
+        self.postings = defaultdict(list)
+        for idx, row in enumerate(counts):
+            weighted = {term: count * self.idf[term] for term, count in row.items()}
+            norm = math.sqrt(sum(weight * weight for weight in weighted.values())) or 1
+            for term, weight in weighted.items():
+                self.postings[term].append((idx, weight / norm))
+        del counts
 
     def _vector(self, counts):
         vector = {term: count * self.idf[term] for term, count in counts.items() if term in self.idf}
@@ -65,25 +78,41 @@ class TfidfIndex:
         return {term: value / norm for term, value in vector.items()}
 
     def search(self, question, top_k=3):
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 0:
+            raise ValueError('top_k must be a non-negative integer')
+        if top_k == 0:
+            return []
         query = self._vector(Counter(tokenize(question)))
-        results = []
-        for chunk, vector in zip(self.chunks, self.vectors):
-            score = sum(value * vector.get(term, 0) for term, value in query.items())
-            if score > 0:
-                results.append({**chunk, 'score': score, 'strategy': 'tfidf'})
-        return sorted(results, key=lambda c: (-c['score'], c['id']))[:top_k]
+        scores = defaultdict(float)
+        for term, query_weight in query.items():
+            for idx, document_weight in self.postings.get(term, ()):
+                scores[idx] += query_weight * document_weight
+        best = nsmallest(
+            top_k,
+            ((score, idx) for idx, score in scores.items() if score > 0),
+            key=lambda item: (-item[0], self.chunks[item[1]]['id']),
+        )
+        return [
+            {**self.chunks[idx], 'score': score, 'strategy': 'tfidf'}
+            for score, idx in best
+        ]
 
 
 def pack_context(results, budget=800):
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
+        raise ValueError('budget must be a non-negative integer')
     blocks, ids, seen = [], [], set()
+    context_chars = 0
     for c in results:
         if c['id'] in seen:
             continue
         seen.add(c['id'])
         block = f"[{c['id']} | {c['source']} | page {c['page']}]\n{c['text']}"
-        if len('\n\n'.join(blocks + [block])) <= budget:
+        separator_chars = 2 if blocks else 0
+        if context_chars + separator_chars + len(block) <= budget:
             blocks.append(block)
             ids.append(c['id'])
+            context_chars += separator_chars + len(block)
     return '\n\n'.join(blocks), ids
 
 

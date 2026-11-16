@@ -3,12 +3,15 @@
 2. Lexical Retrieval: BM25 Okapi over corpus chunks
 3. Hybrid Retrieval: Reciprocal Rank Fusion (RRF) combining Dense and BM25
 """
+import logging
 import math
 import re
 import unicodedata
 from collections import Counter
 from heapq import nsmallest
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> List[str]:
@@ -30,13 +33,28 @@ def _validate_query(query: str) -> None:
 
 
 def pack_context(results: List[Dict[str, Any]], budget: int = 800) -> tuple[str, List[str]]:
-    """Pack candidate chunks into context within a character budget."""
+    """Pack candidate chunks into context within a character budget.
+
+    Deduplicates by both chunk ID and text content so that identical passages
+    retrieved by multiple strategies are only included once.  Any chunk dropped
+    because its text is a duplicate of an already-included chunk is logged at
+    DEBUG level.  Any chunk dropped because it would exceed the budget is logged
+    at DEBUG level as well.
+
+    Args:
+        results: Ordered list of chunk dicts, each with 'id' and 'text' keys.
+        budget:  Maximum total context length in **characters** (default 800).
+
+    Returns:
+        A tuple of (context_string, list_of_included_chunk_ids).
+    """
     if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
         raise ValueError("budget must be a non-negative integer")
 
     blocks: List[str] = []
     ids: List[str] = []
-    seen = set()
+    seen_ids: set = set()
+    seen_texts: set = set()
     context_chars = 0
     for c in results:
         cid = c['id']
@@ -44,22 +62,43 @@ def pack_context(results: List[Dict[str, Any]], budget: int = 800) -> tuple[str,
             raise ValueError("each chunk must have a non-empty string id")
         if not isinstance(c.get('text'), str):
             raise ValueError(f"chunk {cid} must have string text")
-        if cid in seen:
+
+        # Dedup by ID
+        if cid in seen_ids:
             continue
-        seen.add(cid)
+        seen_ids.add(cid)
+
+        # Dedup by content
+        text_content = c['text']
+        if text_content in seen_texts:
+            logger.debug("pack_context: dropped chunk %s — duplicate content", cid)
+            continue
+        seen_texts.add(text_content)
+
         source = c.get('source', c.get('source_id', 'unknown'))
         page = c.get('page', 0)
-        block = f"[{cid} | {source} | page {page}]\n{c['text']}"
+        block = f"[{cid} | {source} | page {page}]\n{text_content}"
         separator_chars = 2 if blocks else 0
         if context_chars + separator_chars + len(block) <= budget:
             blocks.append(block)
             ids.append(cid)
             context_chars += separator_chars + len(block)
+        else:
+            logger.debug(
+                "pack_context: dropped chunk %s — would exceed budget of %d chars "
+                "(current=%d, block=%d)",
+                cid, budget, context_chars, len(block),
+            )
     return '\n\n'.join(blocks), ids
 
 
 class DenseRetriever:
-    """Dense retriever using FastEmbed BAAI/bge-small-en-v1.5 and Qdrant."""
+    """Dense retriever using FastEmbed BAAI/bge-small-en-v1.5 and Qdrant.
+
+    Latency for :meth:`search` is measured in **milliseconds** by callers
+    (e.g. :func:`~src.evaluation.evaluate_retriever_on_cases`).
+    """
+
     def __init__(self, storage_path: str = "data/day6_qdrant_storage",
                  collection_name: str = "strategy_b",
                  model_name: str = "BAAI/bge-small-en-v1.5"):
@@ -71,12 +110,31 @@ class DenseRetriever:
 
         self.storage_path = storage_path
         self.collection_name = collection_name
+        self.model_name = model_name
         self.embedder = TextEmbedding(model_name)
         self.client = QdrantClient(path=storage_path)
         self.models = models
 
+    def __repr__(self) -> str:
+        return (
+            f"DenseRetriever(strategy='dense', model='{self.model_name}', "
+            f"collection='{self.collection_name}')"
+        )
+
     def search(self, query: str, top_k: int = 3,
                filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Search for the *top_k* most relevant chunks.
+
+        Args:
+            query:   Natural-language query string.
+            top_k:   Maximum number of results to return (default 3).
+            filters: Optional metadata key/value filters.
+
+        Returns:
+            List of chunk dicts with 'score' (cosine similarity, 0–1) and
+            'strategy' set to ``'dense'``.  Latency is measured in **ms** by
+            the caller.
+        """
         _validate_query(query)
         _validate_top_k(top_k)
         if filters is not None and not isinstance(filters, dict):
@@ -122,13 +180,54 @@ class DenseRetriever:
             })
         return results
 
+    def search_with_score_threshold(
+        self,
+        query: str,
+        top_k: int = 3,
+        min_score: float = 0.0,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search and filter out results whose cosine similarity score is below *min_score*.
+
+        Args:
+            query:     Natural-language query string.
+            top_k:     Maximum number of results before score filtering (default 3).
+            min_score: Minimum acceptable score in [0, 1]; chunks with
+                       ``score < min_score`` are dropped (default 0.0 — no filtering).
+            filters:   Optional metadata key/value filters passed to :meth:`search`.
+
+        Returns:
+            Filtered list of chunk dicts (each retains 'score' and 'strategy').
+            Latency is measured in **ms** by the caller.
+        """
+        results = self.search(query, top_k=top_k, filters=filters)
+        filtered = [r for r in results if r['score'] >= min_score]
+        dropped = len(results) - len(filtered)
+        if dropped:
+            logger.debug(
+                "search_with_score_threshold: dropped %d/%d results below min_score=%.4f",
+                dropped, len(results), min_score,
+            )
+        return filtered
+
     def close(self):
         self.client.close()
 
 
 class BM25Retriever:
-    """BM25 Okapi lexical retriever over a collection of chunks."""
+    """BM25 Okapi lexical retriever over a collection of chunks.
+
+    Latency for :meth:`search` is measured in **milliseconds** by callers.
+    """
+
     def __init__(self, chunks: List[Dict[str, Any]], k1: float = 1.5, b: float = 0.75):
+        """Initialise and index *chunks* with BM25 parameters *k1* and *b*.
+
+        Args:
+            chunks: List of chunk dicts with 'id' and 'text' keys.
+            k1:     Term-frequency saturation parameter (default 1.5, must be > 0).
+            b:      Length normalisation parameter in [0, 1] (default 0.75).
+        """
         if isinstance(k1, bool) or not isinstance(k1, (int, float)) or not math.isfinite(k1) or k1 <= 0:
             raise ValueError("k1 must be a finite positive number")
         if isinstance(b, bool) or not isinstance(b, (int, float)) or not math.isfinite(b) or not 0 <= b <= 1:
@@ -169,8 +268,26 @@ class BM25Retriever:
             # Standard BM25 IDF with smoothing
             self.idf[term] = math.log(1 + (total_docs - df + 0.5) / (df + 0.5))
 
+    def __repr__(self) -> str:
+        return (
+            f"BM25Retriever(strategy='bm25', corpus_size={len(self.chunks)}, "
+            f"k1={self.k1!r}, b={self.b!r})"
+        )
+
     def search(self, query: str, top_k: int = 3,
                filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Return up to *top_k* chunks ranked by BM25 score.
+
+        Args:
+            query:   Natural-language query string.
+            top_k:   Maximum number of results (default 3).
+            filters: Optional metadata key/value filters.
+
+        Returns:
+            List of chunk dicts with 'score' (BM25 score, unbounded positive
+            float) and 'strategy' set to ``'bm25'``.  Latency is measured in
+            **ms** by the caller.
+        """
         _validate_query(query)
         _validate_top_k(top_k)
         if filters is not None and not isinstance(filters, dict):
@@ -220,19 +337,61 @@ class BM25Retriever:
 
 
 class HybridRetriever:
-    """Hybrid Retriever fusing Dense and BM25 using Reciprocal Rank Fusion (RRF)."""
+    """Hybrid Retriever fusing Dense and BM25 using Reciprocal Rank Fusion (RRF).
+
+    Latency for :meth:`search` is measured in **milliseconds** by callers.
+    """
+
     def __init__(self, dense_retriever: DenseRetriever,
                  bm25_retriever: BM25Retriever,
-                 rrf_k: int = 60):
+                 rrf_k: int = 60,
+                 pool_multiplier: Optional[int] = None):
+        """Initialise the HybridRetriever.
+
+        Args:
+            dense_retriever:  A :class:`DenseRetriever` instance.
+            bm25_retriever:   A :class:`BM25Retriever` instance.
+            rrf_k:            RRF rank-smoothing constant (default 60, must be > 0).
+                              Higher values reduce the impact of top-ranked results.
+            pool_multiplier:  Multiplier applied to *top_k* to determine the
+                              candidate pool fetched from each sub-retriever before
+                              fusion.  ``pool_size = max(top_k * pool_multiplier, 15)``.
+                              Default ``None`` uses a multiplier of 4.
+        """
         if isinstance(rrf_k, bool) or not isinstance(rrf_k, int) or rrf_k <= 0:
             raise ValueError("rrf_k must be a positive integer")
+        if pool_multiplier is not None:
+            if isinstance(pool_multiplier, bool) or not isinstance(pool_multiplier, int) or pool_multiplier <= 0:
+                raise ValueError("pool_multiplier must be a positive integer or None")
         self.dense = dense_retriever
         self.bm25 = bm25_retriever
         self.rrf_k = rrf_k
+        self.pool_multiplier = pool_multiplier if pool_multiplier is not None else 4
         self.chunks_by_id = {c['id']: c for c in bm25_retriever.chunks}
+
+    def __repr__(self) -> str:
+        return (
+            f"HybridRetriever(strategy='hybrid_rrf', rrf_k={self.rrf_k!r}, "
+            f"pool_multiplier={self.pool_multiplier!r})"
+        )
 
     def search(self, query: str, top_k: int = 3,
                filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Return up to *top_k* chunks fused via Reciprocal Rank Fusion.
+
+        A candidate pool of ``max(top_k * pool_multiplier, 15)`` results is
+        fetched from each sub-retriever before RRF scoring.
+
+        Args:
+            query:   Natural-language query string.
+            top_k:   Maximum number of results after fusion (default 3).
+            filters: Optional metadata key/value filters forwarded to both
+                     sub-retrievers.
+
+        Returns:
+            List of chunk dicts with 'score' (RRF score) and 'strategy' set to
+            ``'hybrid_rrf'``.  Latency is measured in **ms** by the caller.
+        """
         _validate_query(query)
         _validate_top_k(top_k)
         if filters is not None and not isinstance(filters, dict):
@@ -241,7 +400,7 @@ class HybridRetriever:
             return []
 
         # Fetch up to candidate pool
-        pool_size = max(top_k * 4, 15)
+        pool_size = max(top_k * self.pool_multiplier, 15)
         dense_hits = self.dense.search(query, top_k=pool_size, filters=filters)
         bm25_hits = self.bm25.search(query, top_k=pool_size, filters=filters)
 

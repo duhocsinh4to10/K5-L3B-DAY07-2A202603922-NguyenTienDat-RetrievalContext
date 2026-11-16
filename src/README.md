@@ -8,7 +8,7 @@ Dự án triển khai hoàn chỉnh giải pháp Agentic Retrieval-Augmented Gen
   1. `DenseRetriever`: FastEmbed `BAAI/bge-small-en-v1.5` + Qdrant Vector Store (kế thừa Day 6).
   2. `BM25Retriever`: Lexical BM25 Okapi retriever.
   3. `HybridRetriever`: Kết hợp Dense + BM25 sử dụng Reciprocal Rank Fusion (RRF $k=60$).
-- `src/agent.py`: Agent Controller tích hợp Google Gemini API (`gemini-3.5-flash-lite`), hỗ trợ tìm kiếm nhiều lượt, citation `[chunk-id]` và từ chối trả lời. Cần đặt `GEMINI_API_KEY`; lỗi API được báo rõ, không thay bằng câu trả lời giả.
+- `src/agent.py`: Agent Controller tích hợp Google Gemini API (`gemini-3.5-flash-lite`), hỗ trợ tìm kiếm nhiều lượt, citation `[chunk-id]` và từ chối trả lời. Khi API offline, fallback chỉ trích câu từ context nếu có từ khóa liên quan; nếu không thì từ chối. Cảnh báo được đưa ra trong CLI/Web.
 - `src/evaluation.py`: Đánh giá xếp hạng retrieval (Hit@1, Hit@3, Context Evidence Rate).
 - `src/benchmark_runner.py`: Chạy retrieval benchmark offline và agent benchmark với Gemini; lưu trace cùng review template chưa gán nhãn. Cần tự chấm câu trả lời trước khi dùng `starter.agent_metrics`.
 - `src/advanced/`:

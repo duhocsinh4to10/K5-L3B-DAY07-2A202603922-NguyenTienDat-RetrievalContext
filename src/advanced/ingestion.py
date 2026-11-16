@@ -16,8 +16,9 @@ _STRUCTURE_PATTERNS = (
 
 
 def clean_text(text: str) -> str:
-    """Normalize whitespace and hyphens."""
+    """Normalize whitespace, repeated dots, and broken hyphens."""
     t = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+    t = re.sub(r'(?:\.\s*){3,}', '... ', t)
     t = re.sub(r'[ \t]+', ' ', t)
     t = re.sub(r'\n{3,}', '\n\n', t)
     return t.strip()

@@ -1,4 +1,16 @@
-"""Evaluation metrics and benchmarking logic for Day 7."""
+"""Evaluation metrics and benchmarking logic for Day 7.
+
+Metric definitions (see BENCHMARK.md):
+
+* **Hit@1** – The top-ranked retrieved chunk contains the gold evidence string
+  on the correct source/page.
+* **Evidence Hit@3** (hit3) – At least one of the top-3 retrieved chunks
+  contains the gold evidence string on the correct source/page.
+* **Context Evidence Rate** – The gold evidence is present in at least one
+  chunk that survived the context-packing budget (see
+  :func:`~src.retrievers.pack_context`).
+* **Avg latency ms** – Mean per-query retrieval latency in **milliseconds**.
+"""
 import statistics
 import time
 from typing import Any, Dict, List, Optional
@@ -40,9 +52,39 @@ def evaluate_retriever_on_cases(
     cases: List[Dict[str, Any]],
     top_k: int = 3,
     budget: int = 800,
-    use_case_filters: bool = False
+    use_case_filters: bool = False,
+    score_threshold: float = 0.0,
 ) -> Dict[str, Any]:
-    """Evaluate retrieval and context evidence metrics on answerable cases."""
+    """Evaluate retrieval and context-evidence metrics on answerable cases.
+
+    Metrics returned (see BENCHMARK.md for definitions):
+
+    * ``hit1`` / ``hit1_rate`` – **Hit@1**: top-1 chunk contains gold evidence.
+    * ``hit3`` / ``hit3_rate`` – **Evidence Hit@3**: any top-3 chunk contains
+      gold evidence.
+    * ``context_hit`` / ``context_evidence_rate`` – **Context Evidence Rate**:
+      gold evidence survives the context budget (budget is in **chars**).
+    * ``mean_latency_ms`` / ``median_latency_ms`` – per-query retrieval latency
+      in **milliseconds**.
+
+    Args:
+        retriever:        Any retriever with a ``search(query, top_k, filters)``
+                          method.  If it also exposes
+                          ``search_with_score_threshold``, that method is used
+                          when *score_threshold* > 0.
+        cases:            List of evaluation case dicts.
+        top_k:            Number of chunks to retrieve per query (default 3).
+        budget:           Context packing budget in **characters** (default 800).
+        use_case_filters: Whether to pass per-case ``filter`` dicts to the
+                          retriever (default False).
+        score_threshold:  Minimum retriever score; chunks below this threshold
+                          are removed before evaluation.  Forwarded to
+                          ``search_with_score_threshold`` when the retriever
+                          supports it; otherwise ignored (default 0.0).
+
+    Returns:
+        Dict with aggregated metrics and per-query ``traces``.
+    """
     answerable_cases = [c for c in cases if c.get('answerable', True)]
     n = len(answerable_cases)
     if n == 0:
@@ -52,6 +94,13 @@ def evaluate_retriever_on_cases(
         raise ValueError("top_k must be a non-negative integer")
     if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
         raise ValueError("budget must be a non-negative integer")
+
+    # Decide which search method to call
+    use_threshold_method = (
+        score_threshold > 0.0
+        and hasattr(retriever, 'search_with_score_threshold')
+        and callable(getattr(retriever, 'search_with_score_threshold'))
+    )
 
     hit1_count = 0
     hit3_count = 0
@@ -67,7 +116,12 @@ def evaluate_retriever_on_cases(
         filters = c.get('filter') if use_case_filters else None
 
         t0 = time.perf_counter()
-        results = retriever.search(question, top_k=top_k, filters=filters)
+        if use_threshold_method:
+            results = retriever.search_with_score_threshold(
+                question, top_k=top_k, min_score=score_threshold, filters=filters
+            )
+        else:
+            results = retriever.search(question, top_k=top_k, filters=filters)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         latencies_ms.append(elapsed_ms)
 
@@ -126,3 +180,47 @@ def evaluate_retriever_on_cases(
         'mean_latency_ms': statistics.mean(latencies_ms) if latencies_ms else 0,
         'traces': traces
     }
+
+
+def format_benchmark_table(results_dict: Dict[str, Dict[str, Any]]) -> str:
+    """Format a markdown benchmark table from a dict of evaluation results.
+
+    Produces one row per configuration with the following columns:
+
+    * **Config** – the configuration name (key in *results_dict*).
+    * **Hit@1** – ``n/N (pct%)`` as defined in BENCHMARK.md.
+    * **Hit@3** – ``n/N (pct%)`` as defined in BENCHMARK.md (Evidence Hit@3).
+    * **Context** – ``n/N (pct%)`` Context Evidence Rate.
+    * **Avg latency ms** – mean per-query retrieval latency in **milliseconds**.
+
+    Args:
+        results_dict: Mapping of config name → result dict as returned by
+                      :func:`evaluate_retriever_on_cases`.
+
+    Returns:
+        A multi-line markdown string ready for printing or embedding in a report.
+
+    Example::
+
+        print(format_benchmark_table({"dense": dense_results, "bm25": bm25_results}))
+    """
+    header = (
+        "| Config | Hit@1 n/N (%) | Hit@3 n/N (%) | Context n/N (%) | Avg latency ms |\n"
+        "|--------|--------------|--------------|-----------------|----------------|\n"
+    )
+    rows = []
+    for name, r in results_dict.items():
+        n = r.get('n', 0)
+        h1 = r.get('hit1', 0)
+        h3 = r.get('hit3', 0)
+        ctx = r.get('context_hit', 0)
+        lat = r.get('mean_latency_ms', 0.0)
+
+        def _fmt(count: int, total: int) -> str:
+            pct = (count / total * 100) if total else 0.0
+            return f"{count}/{total} ({pct:.1f}%)"
+
+        rows.append(
+            f"| {name} | {_fmt(h1, n)} | {_fmt(h3, n)} | {_fmt(ctx, n)} | {lat:.1f} |"
+        )
+    return header + "\n".join(rows)

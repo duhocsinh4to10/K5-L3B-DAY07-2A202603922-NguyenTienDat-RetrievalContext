@@ -6,10 +6,13 @@ import os
 import json
 import time
 import socket
+import logging
+import argparse
 import threading
 import subprocess
 import webbrowser
 from pathlib import Path
+from typing import Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
@@ -24,6 +27,54 @@ from src.agent import LLMController
 from starter.agentic import run_agent
 
 HTML_PATH = ROOT_DIR / "src" / "web" / "index.html"
+MAX_REQUEST_BYTES = 1_048_576
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+# Content-Security-Policy header value
+CSP_VALUE = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self';"
+)
+
+
+def parse_chat_request(body: bytes) -> dict:
+    """Decode and validate an HTTP chat request before retrieving any data."""
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Invalid JSON request body") from exc
+    return validate_chat_request(data)
+
+
+def validate_chat_request(data: Any) -> dict:
+    """Validate already decoded chat input, including direct server calls."""
+    if not isinstance(data, dict):
+        raise ValueError("JSON request body must be an object")
+
+    question = data.get("question")
+    if not isinstance(question, str) or not question.strip() or len(question) > 4000:
+        raise ValueError("question must be a non-empty string of at most 4000 characters")
+    corpus = data.get("corpus", "nist")
+    if corpus not in ("nist", "gsdr"):
+        raise ValueError("corpus must be 'nist' or 'gsdr'")
+
+    top_k = data.get("top_k", 5)
+    budget = data.get("budget", 1200)
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 20:
+        raise ValueError("top_k must be an integer from 1 to 20")
+    if isinstance(budget, bool) or not isinstance(budget, int) or not 1 <= budget <= 5000:
+        raise ValueError("budget must be an integer from 1 to 5000")
+    return {"question": question.strip(), "corpus": corpus, "top_k": top_k, "budget": budget}
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -39,60 +90,108 @@ class RAGAppServer:
         self.gsdr_hybrid = None
         self.dense_nist = None
         self.dense_gsdr = None
+        self.init_errors = {}
         self._init_corpora()
 
     def _init_corpora(self):
         print("Đang khởi tạo các kho tri thức và chỉ mục RAG...")
         # 1. NIST AI RMF
         nist_chunks_file = ROOT_DIR / "data" / "converted" / "chunks.json"
-        if nist_chunks_file.exists():
+        try:
+            if not nist_chunks_file.exists():
+                raise FileNotFoundError(f"Không tìm thấy {nist_chunks_file}")
             with open(nist_chunks_file, "r", encoding="utf-8") as f:
                 nist_chunks = json.load(f)
             self.dense_nist = DenseRetriever(
                 storage_path=str(ROOT_DIR / "data" / "day6_qdrant_storage"),
-                collection_name="strategy_b"
+                collection_name="strategy_b",
             )
-            bm25_nist = BM25Retriever(nist_chunks)
-            self.nist_hybrid = HybridRetriever(self.dense_nist, bm25_nist)
+            self.nist_hybrid = HybridRetriever(self.dense_nist, BM25Retriever(nist_chunks))
             print(f"  ✓ NIST AI RMF 1.0 sẵn sàng ({len(nist_chunks)} chunks).")
-        else:
-            print("  ⚠️ Không tìm thấy data/converted/chunks.json")
+        except Exception as exc:
+            if self.dense_nist is not None:
+                self.dense_nist.close()
+                self.dense_nist = None
+            self.nist_hybrid = None
+            self.init_errors["nist"] = str(exc)
+            logger.warning("Không thể tải kho NIST: %s", exc)
+            print(f"  ⚠️ Không thể tải kho NIST: {exc}")
 
         # 2. GSDR 2023
         gsdr_chunks_file = ROOT_DIR / "data" / "gsdr_index" / "gsdr_chunks.json"
-        if gsdr_chunks_file.exists():
+        try:
+            if not gsdr_chunks_file.exists():
+                raise FileNotFoundError(f"Không tìm thấy {gsdr_chunks_file}")
             with open(gsdr_chunks_file, "r", encoding="utf-8") as f:
                 gsdr_chunks = json.load(f)
             self.dense_gsdr = GSDRDenseRetriever(
                 storage_path=str(ROOT_DIR / "data" / "gsdr_qdrant_storage"),
-                collection_name="gsdr_advanced"
+                collection_name="gsdr_advanced",
             )
-            bm25_gsdr = GSDRBM25Retriever(gsdr_chunks)
-            self.gsdr_hybrid = GSDRHybridRetriever(self.dense_gsdr, bm25_gsdr)
+            self.gsdr_hybrid = GSDRHybridRetriever(self.dense_gsdr, GSDRBM25Retriever(gsdr_chunks))
             print(f"  ✓ GSDR 2023 Advanced sẵn sàng ({len(gsdr_chunks)} chunks).")
-        else:
-            print("  ⚠️ Không tìm thấy data/gsdr_index/gsdr_chunks.json")
+        except Exception as exc:
+            if self.dense_gsdr is not None:
+                self.dense_gsdr.close()
+                self.dense_gsdr = None
+            self.gsdr_hybrid = None
+            self.init_errors["gsdr"] = str(exc)
+            logger.warning("Không thể tải kho GSDR: %s", exc)
+            print(f"  ⚠️ Không thể tải kho GSDR: {exc}")
 
     def query(self, question: str, corpus: str = "nist", top_k: int = 5, budget: int = 1200) -> dict:
-        retriever = self.gsdr_hybrid if corpus == "gsdr" else self.nist_hybrid
+        try:
+            request = validate_chat_request({
+                "question": question,
+                "corpus": corpus,
+                "top_k": top_k,
+                "budget": budget,
+            })
+        except ValueError as exc:
+            logger.error("Invalid query parameters: %s", exc)
+            return {
+                "status": "error",
+                "answer": f"Tham số không hợp lệ: {exc}",
+                "citations": [],
+                "events": [],
+                "retrieved_chunks": [],
+                "error": str(exc),
+            }
+
+        retriever = self.gsdr_hybrid if request["corpus"] == "gsdr" else self.nist_hybrid
         if retriever is None:
             return {
                 "status": "abstain",
                 "answer": f"Lỗi: Kho tri thức '{corpus}' chưa được tải.",
                 "citations": [],
                 "events": [],
-                "retrieved_chunks": []
+                "retrieved_chunks": [],
+                "error": self.init_errors.get(corpus),
             }
 
         start = time.perf_counter()
-        result = run_agent(
-            question=question,
-            controller=self.controller,
-            retriever=retriever,
-            max_searches=4,
-            top_k=top_k,
-            budget=budget
-        )
+        try:
+            result = run_agent(
+                question=request["question"],
+                controller=self.controller,
+                retriever=retriever,
+                max_searches=4,
+                top_k=request["top_k"],
+                budget=request["budget"],
+            )
+        except Exception as exc:
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            logger.error("Agent run_agent raised an exception for question=%r corpus=%s: %s", question, corpus, exc)
+            return {
+                "status": "error",
+                "answer": f"Lỗi trong quá trình xử lý: {exc}",
+                "citations": [],
+                "events": [],
+                "retrieved_chunks": [],
+                "error": str(exc),
+                "latency_ms": latency_ms,
+            }
+
         latency_ms = round((time.perf_counter() - start) * 1000)
 
         # Extract all retrieved chunks from search events
@@ -115,6 +214,8 @@ class RAGAppServer:
 
         result["latency_ms"] = latency_ms
         result["retrieved_chunks"] = retrieved_chunks
+        if self.controller.last_error:
+            result["controller_warning"] = self.controller.last_error
         return result
 
     def close(self):
@@ -132,53 +233,112 @@ class RAGRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
+            if not HTML_PATH.is_file():
+                self.send_error(404, "Web UI file not found")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Security-Policy", CSP_VALUE)
             self.end_headers()
             with open(HTML_PATH, "rb") as f:
                 self.wfile.write(f.read())
         elif self.path == "/api/status":
+            if APP_ENGINE is None:
+                self.send_json({"status": "starting"}, status=503)
+                return
             self.send_json({
                 "status": "online",
-                "gemini": bool(APP_ENGINE.controller.gemini_key),
+                "gemini": APP_ENGINE.controller.gemini_available,
                 "corpora": {
                     "nist": APP_ENGINE.nist_hybrid is not None,
                     "gsdr": APP_ENGINE.gsdr_hybrid is not None
-                }
+                },
+                "corpus_errors": APP_ENGINE.init_errors,
             })
+        elif self.path == "/api/usage":
+            if APP_ENGINE is None:
+                self.send_json({"error": "Agent server is not ready"}, status=503)
+                return
+            if hasattr(APP_ENGINE.controller, "usage_report"):
+                report = APP_ENGINE.controller.usage_report()
+            else:
+                report = {
+                    "call_count": 0,
+                    "total_prompt_tokens": 0,
+                    "total_candidates_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                }
+            self.send_json(report)
         else:
             self.send_error(404, "Not Found")
 
     def do_POST(self):
         if self.path == "/api/chat":
-            content_len = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_len)
+            t0 = time.perf_counter()
+            timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+            corpus = "unknown"
+            question_len = 0
+            response_status = 500
+
             try:
-                data = json.loads(body.decode("utf-8"))
-            except Exception as e:
-                self.send_json({"error": f"Invalid JSON: {str(e)}"}, status=400)
+                content_len = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                self.send_json({"error": "Content-Length must be a valid integer"}, status=400)
                 return
-
-            question = data.get("question", "").strip()
-            corpus = data.get("corpus", "nist")
-            top_k = int(data.get("top_k", 5))
-            budget = int(data.get("budget", 1200))
-
-            if not question:
-                self.send_json({"error": "Question is required"}, status=400)
+            if content_len < 1:
+                self.send_json({"error": "Request body is required"}, status=400)
                 return
-
-            res = APP_ENGINE.query(question=question, corpus=corpus, top_k=top_k, budget=budget)
-            self.send_json(res)
+            if content_len > MAX_REQUEST_BYTES:
+                self.send_json({"error": "Request body is too large"}, status=413)
+                return
+            body = self.rfile.read(content_len)
+            if len(body) != content_len:
+                self.send_json({"error": "Request body ended unexpectedly"}, status=400)
+                return
+            try:
+                request = parse_chat_request(body)
+                corpus = request.get("corpus", "unknown")
+                question_len = len(request.get("question", ""))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, status=400)
+                return
+            if APP_ENGINE is None:
+                self.send_json({"error": "Agent server is not ready"}, status=503)
+                return
+            try:
+                result = APP_ENGINE.query(**request)
+                response_status = 200
+                self.send_json(result)
+            except Exception as exc:
+                response_status = 502
+                self.send_json({"error": f"Agent request failed: {exc}"}, status=502)
+            finally:
+                latency_ms = round((time.perf_counter() - t0) * 1000)
+                logger.info(
+                    "chat | ts=%s corpus=%s q_len=%d status=%d latency_ms=%d",
+                    timestamp, corpus, question_len, response_status, latency_ms,
+                )
         else:
             self.send_error(404, "Not Found")
+
+    def do_PUT(self):
+        self._method_not_allowed()
+
+    def do_DELETE(self):
+        self._method_not_allowed()
+
+    def do_PATCH(self):
+        self._method_not_allowed()
+
+    def _method_not_allowed(self):
+        self.send_json({"error": "Method Not Allowed"}, status=405)
 
     def send_json(self, data: dict, status: int = 200):
         resp_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(resp_bytes)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Security-Policy", CSP_VALUE)
         self.end_headers()
         self.wfile.write(resp_bytes)
 
@@ -197,6 +357,7 @@ def open_in_chrome(url: str):
     for path in chrome_candidates:
         if os.path.isfile(path):
             try:
+                # Use list form so Windows handles spaces in path correctly
                 subprocess.Popen([path, url])
                 print(f"Đã mở Google Chrome thành công: {url}")
                 return
@@ -207,18 +368,45 @@ def open_in_chrome(url: str):
 
 
 def find_available_port(start_port: int = 7860, max_attempts: int = 10) -> int:
+    if isinstance(start_port, bool) or not isinstance(start_port, int) or not 1 <= start_port <= 65535:
+        raise ValueError("start_port must be between 1 and 65535")
+    if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
+        raise ValueError("max_attempts must be a positive integer")
     for port in range(start_port, start_port + max_attempts):
+        if port > 65535:
+            break
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('127.0.0.1', port)) != 0:
+            try:
+                s.bind(("127.0.0.1", port))
                 return port
-    return start_port
+            except OSError:
+                continue
+    raise OSError(f"No free port found from {start_port} through {min(65535, start_port + max_attempts - 1)}")
+
+
+def parse_args(argv=None):
+    """Parse CLI arguments. Supports --port <int>."""
+    parser = argparse.ArgumentParser(description="VinAI Day 7 — Agentic RAG Web Server")
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Port to listen on (default: auto-select starting from 7860)",
+    )
+    return parser.parse_args(argv)
 
 
 def main():
     global APP_ENGINE
-    port = find_available_port(7860)
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        port = int(sys.argv[1])
+    args = parse_args()
+
+    if args.port is not None:
+        if not 1 <= args.port <= 65535:
+            raise ValueError("--port must be between 1 and 65535")
+        port = args.port
+    else:
+        port = find_available_port(7860)
 
     print("=" * 65)
     print("      🚀 KHỞI ĐỘNG GIAO DIỆN WEB VINAI DAY 7 TRÊN CHROME 🚀      ")
@@ -226,25 +414,26 @@ def main():
     APP_ENGINE = RAGAppServer()
 
     server_address = ('127.0.0.1', port)
-    httpd = ThreadedHTTPServer(server_address, RAGRequestHandler)
     url = f"http://127.0.0.1:{port}"
-
-    print(f"\n[SERVER ONLINE] Máy chủ web đang chạy tại:")
-    print(f"👉 URL: {url}")
-    print("-" * 65)
-    print("Đang tự động mở Google Chrome...")
-
-    # Open Chrome after 0.6s
-    threading.Timer(0.6, open_in_chrome, args=[url]).start()
-
-    print("Nhấn Ctrl+C để dừng máy chủ bất kỳ lúc nào.\n")
+    httpd = None
     try:
+        httpd = ThreadedHTTPServer(server_address, RAGRequestHandler)
+        print(f"\n[SERVER ONLINE] Máy chủ web đang chạy tại:\n👉 URL: {url}")
+        print("-" * 65)
+        print("Đang tự động mở Google Chrome...")
+
+        browser_timer = threading.Timer(0.6, open_in_chrome, args=[url])
+        browser_timer.daemon = True
+        browser_timer.start()
+        print("Nhấn Ctrl+C để dừng máy chủ bất kỳ lúc nào.\n")
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nĐang dừng máy chủ web...")
     finally:
-        httpd.server_close()
+        if httpd is not None:
+            httpd.server_close()
         APP_ENGINE.close()
+        APP_ENGINE = None
         print("Đã đóng kết nối an toàn.")
 
 

@@ -104,8 +104,42 @@ def summarize(cases: List[Dict[str, Any]], traces: List[Dict[str, Any]]) -> Dict
             'correct_abstentions': correct_unanswerable_status,
             'abstention_rate': rate(correct_unanswerable_status, len(unanswerable)),
         },
+        'per_group': per_group_summary(cases, traces),
         'answer_quality': 'requires manual review',
     }
+
+
+def per_group_summary(cases: List[Dict[str, Any]], traces: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Breakdown evaluation metrics by case group as required by ADVANCED.md.
+
+    Groups evaluated: 'table', 'figure', 'chart', 'multi-hop', 'text', 'abstain'.
+    A case is counted as passed if:
+      - For answerable cases: status is 'answered' AND gold evidence retrieved is True
+      - For unanswerable cases: status is 'abstain'
+    """
+    trace_by_id = {trace['query_id']: trace for trace in traces}
+    groups: Dict[str, List[tuple[Dict[str, Any], Dict[str, Any]]]] = {}
+    for case in cases:
+        grp = case.get('group', 'other').lower()
+        groups.setdefault(grp, []).append((case, trace_by_id.get(case['id'], {})))
+
+    summary_by_group: Dict[str, Any] = {}
+    for grp, pairs in sorted(groups.items()):
+        total = len(pairs)
+        passed = 0
+        for case, trace in pairs:
+            if not case.get('answerable', True):
+                if trace.get('status') == 'abstain':
+                    passed += 1
+            else:
+                if trace.get('status') == 'answered' and trace.get('gold_evidence_retrieved'):
+                    passed += 1
+        summary_by_group[grp] = {
+            'n': total,
+            'passed': passed,
+            'pass_rate': (passed / total) if total else 0.0,
+        }
+    return summary_by_group
 
 
 def _write_json(path: Path, value: Any) -> None:

@@ -73,7 +73,7 @@
     .status-group {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
     }
     .pulse-pill {
       display: flex;
@@ -99,6 +99,75 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(0.85); }
     }
+
+    /* Header action buttons */
+    .header-btn {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .header-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* Usage Popup */
+    .usage-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .usage-overlay.visible { display: flex; }
+    .usage-popup {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px 28px;
+      min-width: 300px;
+      max-width: 400px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+    .usage-popup h3 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--accent);
+    }
+    .usage-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+    .usage-row:last-of-type { border-bottom: none; }
+    .usage-label { color: var(--text-muted); }
+    .usage-value { font-weight: 700; color: var(--text-main); }
+    .usage-close-btn {
+      margin-top: 16px;
+      width: 100%;
+      background: var(--accent-dim);
+      border: 1px solid rgba(56,189,248,0.3);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+      padding: 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .usage-close-btn:hover { background: rgba(56,189,248,0.2); }
 
     /* Main Container */
     .app-container {
@@ -154,6 +223,7 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
+      scroll-behavior: smooth;
     }
     .message-row {
       display: flex;
@@ -196,6 +266,18 @@
       background: #312e81;
       border-color: #4338ca;
       color: #e0e7ff;
+    }
+
+    /* Abstain bubble: amber tint */
+    .message-bubble.abstain-bubble {
+      background: rgba(245, 158, 11, 0.08);
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .abstain-note {
+      font-size: 11px;
+      color: var(--amber);
+      margin-top: 6px;
+      font-style: italic;
     }
 
     .status-tag {
@@ -258,7 +340,13 @@
       white-space: nowrap;
       background: #0f172a;
       border-top: 1px solid var(--border);
+      /* Horizontal scroll for GSDR overflow */
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
+    .sample-prompts::-webkit-scrollbar { height: 4px; }
+    .sample-prompts::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     .sample-pill {
       background: rgba(30, 41, 59, 0.7);
       border: 1px solid var(--border);
@@ -268,6 +356,7 @@
       font-size: 12px;
       cursor: pointer;
       transition: all 0.15s;
+      flex-shrink: 0;
     }
     .sample-pill:hover {
       background: var(--accent-dim);
@@ -316,6 +405,24 @@
     }
     .send-btn:hover { opacity: 0.9; }
     .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Clear chat button */
+    .clear-btn {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 0 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .clear-btn:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: var(--red);
+    }
 
     /* Right Evidence Panel */
     .inspector-panel {
@@ -457,19 +564,44 @@
 </head>
 <body>
 
+  <!-- Usage Stats Popup Overlay -->
+  <div class="usage-overlay" id="usage-overlay" onclick="closeUsagePopup(event)">
+    <div class="usage-popup" onclick="event.stopPropagation()">
+      <h3>📊 Usage Stats — LLM Controller</h3>
+      <div class="usage-row">
+        <span class="usage-label">Total API calls</span>
+        <span class="usage-value" id="usage-calls">—</span>
+      </div>
+      <div class="usage-row">
+        <span class="usage-label">Total prompt tokens</span>
+        <span class="usage-value" id="usage-prompt-tokens">—</span>
+      </div>
+      <div class="usage-row">
+        <span class="usage-label">Total candidate tokens</span>
+        <span class="usage-value" id="usage-candidate-tokens">—</span>
+      </div>
+      <div class="usage-row">
+        <span class="usage-label">Estimated cost</span>
+        <span class="usage-value" id="usage-cost">$0.00</span>
+      </div>
+      <button class="usage-close-btn" onclick="closeUsagePopup()">Close</button>
+    </div>
+  </div>
+
   <!-- Header -->
   <header>
     <div class="logo-group">
       <div class="logo-badge">VinAI Day 7</div>
       <div class="header-titles">
-        <h1>Agentic Retrieval & Context Engineering Explorer</h1>
+        <h1>Agentic Retrieval &amp; Context Engineering Explorer</h1>
         <p>Sinh viên: <b>Nguyễn Tiến Đạt</b> (MSSV: 2A202603922 — Lớp L3B)</p>
       </div>
     </div>
     <div class="status-group">
+      <button class="header-btn" onclick="openUsagePopup()">📊 Usage Stats</button>
       <div class="pulse-pill">
         <div class="pulse-dot"></div>
-        <span id="gemini-status">Google Gemini 3.5 Ready</span>
+        <span id="gemini-status">Checking agent status…</span>
       </div>
     </div>
   </header>
@@ -499,7 +631,7 @@
             <ul style="margin: 8px 0 8px 20px; font-size: 13px; color: #cbd5e1;">
               <li><b>Hybrid RRF Retrieval:</b> Kết hợp Dense Embeddings <code>bge-small-en-v1.5</code> và BM25 Okapi Lexical.</li>
               <li><b>Context Engineering:</b> Budget packing, trích dẫn chính xác <code>[chunk-id]</code>.</li>
-              <li><b>Controller:</b> Tích hợp <b>Google Gemini API</b> (kèm fallback reasoning).</li>
+              <li><b>Controller:</b> Tích hợp <b>Google Gemini API</b> hoặc trích xuất câu có bằng chứng khi offline.</li>
               <li><b>Abstention Enforcement:</b> Tự động từ chối khi tài liệu không chứa đủ bằng chứng.</li>
             </ul>
             <p style="font-size: 13px; color: #94a3b8;">Chọn câu hỏi mẫu bên dưới hoặc nhập câu hỏi bất kỳ để bắt đầu kiểm thử!</p>
@@ -521,6 +653,7 @@
           placeholder="Nhập câu hỏi của bạn (ví dụ: 'What are the four Core functions?')..." 
           autocomplete="off"
         />
+        <button type="button" class="clear-btn" onclick="clearChat()" title="Clear chat">🗑️ Clear</button>
         <button type="submit" id="send-button" class="send-btn">
           <span>Gửi</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -534,7 +667,7 @@
     <!-- Right Inspector Panel -->
     <div class="inspector-panel">
       <div class="panel-header">
-        <h2>BẰNG CHỨNG & VẾT THỰC THI</h2>
+        <h2>BẰNG CHỨNG &amp; VẾT THỰC THI</h2>
         <div class="panel-tabs">
           <button class="panel-tab active" id="tab-chunks" onclick="switchInspectorTab('chunks')">Chunks (<span id="chunk-count">0</span>)</button>
           <button class="panel-tab" id="tab-traces" onclick="switchInspectorTab('traces')">Trace Steps</button>
@@ -552,6 +685,8 @@
     let currentCorpus = 'nist';
     let currentTab = 'chunks';
     let lastResponse = null;
+
+    const WELCOME_HTML = document.getElementById('chat-messages').innerHTML;
 
     const samples = {
       nist: [
@@ -591,7 +726,16 @@
       document.getElementById('tab-nist').classList.toggle('active', corpus === 'nist');
       document.getElementById('tab-gsdr').classList.toggle('active', corpus === 'gsdr');
       renderSamplePrompts();
+      // Reset inspector panel when switching corpus
+      lastResponse = null;
+      resetInspector();
       appendBotNotice(`Đã chuyển kho tri thức sang: <b>${corpus === 'nist' ? 'NIST AI RMF 1.0 (Core)' : 'UN GSDR 2023 (Thử thách Nâng cao 224 trang)'}</b>.`);
+    }
+
+    function resetInspector() {
+      document.getElementById('chunk-count').textContent = '0';
+      document.getElementById('inspector-body').innerHTML =
+        `<div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">Chưa có dữ liệu truy vấn.</div>`;
     }
 
     function switchInspectorTab(tab) {
@@ -615,12 +759,25 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
-    function formatCitationsInAnswer(text, citations) {
-      let formatted = text;
-      // Replace [chunk-id] with clickable chips
+    function clearChat() {
+      const chat = document.getElementById('chat-messages');
+      chat.innerHTML = WELCOME_HTML;
+      lastResponse = null;
+      resetInspector();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[char]);
+    }
+
+    function formatCitationsInAnswer(text) {
+      // Escape model output before adding our own citation markup.
+      let formatted = escapeHtml(text);
       const regex = /\[([a-zA-Z0-9_\-\.\/]+)\]/g;
       formatted = formatted.replace(regex, (match, cid) => {
-        return `<span class="citation-chip" onclick="highlightChunk('${cid}')">[${cid}]</span>`;
+        return `<span class="citation-chip" data-cid="${cid}">[${cid}]</span>`;
       });
       return formatted;
     }
@@ -637,6 +794,11 @@
         }
       });
     }
+
+    document.addEventListener('click', event => {
+      const chip = event.target.closest('.citation-chip');
+      if (chip) highlightChunk(chip.dataset.cid);
+    });
 
     function renderInspector() {
       const container = document.getElementById('inspector-body');
@@ -657,17 +819,17 @@
         chunks.forEach((c, idx) => {
           const isCited = (lastResponse.citations || []).includes(c.id);
           html += `
-            <div class="chunk-card ${isCited ? 'highlight' : ''}" data-cid="${c.id}">
+            <div class="chunk-card ${isCited ? 'highlight' : ''}" data-cid="${escapeHtml(c.id)}">
               <div class="chunk-header">
-                <span class="chunk-id">#${idx+1} [${c.id}]</span>
-                <span class="chunk-score">RRF: ${(c.score || 0).toFixed(4)}</span>
+              <span class="chunk-id">#${idx+1} [${escapeHtml(c.id)}]</span>
+                <span class="chunk-score">RRF: ${Number.isFinite(Number(c.score)) ? Number(c.score).toFixed(4) : '0.0000'}</span>
               </div>
               <div class="chunk-meta">
-                <span>📄 Trang: <b>${c.page ?? 'N/A'}</b></span> • 
-                <span>Loại: <b>${c.metadata?.chunk_type || 'text'}</b></span> • 
-                <span>Nguồn: <b>${c.source?.split('/').pop() || 'file'}</b></span>
+                <span>📄 Trang: <b>${escapeHtml(c.page ?? 'N/A')}</b></span> •
+                <span>Loại: <b>${escapeHtml(c.metadata?.chunk_type || 'text')}</b></span> •
+                <span>Nguồn: <b>${escapeHtml(c.source?.split('/').pop() || 'file')}</b></span>
               </div>
-              <div class="chunk-snippet">${c.text || ''}</div>
+              <div class="chunk-snippet">${escapeHtml(c.text || '')}</div>
             </div>
           `;
         });
@@ -682,14 +844,14 @@
             html += `
               <div class="trace-step">
                 <div class="trace-title">Bước ${idx+1}: Tool Call — search()</div>
-                <div class="trace-desc">Query: "${ev.query}"<br>Top-K candidates: ${ev.results?.length || 0}<br>Context packed: [${(ev.context_ids || []).join(', ')}]</div>
+                <div class="trace-desc">Query: "${escapeHtml(ev.query)}"<br>Top-K candidates: ${ev.results?.length || 0}<br>Context packed: [${escapeHtml((ev.context_ids || []).join(', '))}]</div>
               </div>
             `;
           } else if (type === 'answer') {
             html += `
               <div class="trace-step" style="border-left-color: var(--green);">
                 <div class="trace-title">Bước ${idx+1}: Sinh câu trả lời (Grounded Answer)</div>
-                <div class="trace-desc">Citations: [${(lastResponse.citations || []).join(', ')}]</div>
+                <div class="trace-desc">Citations: [${escapeHtml((lastResponse.citations || []).join(', '))}]</div>
               </div>
             `;
           } else if (type === 'invalid_or_missing_citations') {
@@ -722,7 +884,7 @@
       userRow.className = 'message-row user';
       userRow.innerHTML = `
         <div class="message-avatar">Đạt</div>
-        <div class="message-bubble">${question}</div>
+        <div class="message-bubble">${escapeHtml(question)}</div>
       `;
       chat.appendChild(userRow);
 
@@ -758,6 +920,9 @@
         });
 
         const data = await resp.json();
+        if (!resp.ok || data.error) {
+          throw new Error(data.error || `Agent request failed (${resp.status})`);
+        }
         const latency = Math.round(performance.now() - startTime);
 
         // Remove typing
@@ -769,18 +934,28 @@
 
         // Append Agent Response
         const isAnswered = data.status === 'answered';
+        const isAbstain = !isAnswered;
         const agentRow = document.createElement('div');
         agentRow.className = 'message-row agent';
 
-        const formattedAnswer = formatCitationsInAnswer(data.answer || '', data.citations || []);
+        const formattedAnswer = formatCitationsInAnswer(data.answer || '');
+        const controllerWarning = data.controller_warning
+          ? `<div style="margin-top:8px;color:#fbbf24;font-size:12px;">${escapeHtml(data.controller_warning)}</div>`
+          : '';
+
+        const abstainNote = isAbstain
+          ? `<div class="abstain-note">🛡️ Agent correctly abstained (no hallucination)</div>`
+          : '';
 
         agentRow.innerHTML = `
           <div class="message-avatar">🤖</div>
-          <div class="message-bubble">
+          <div class="message-bubble${isAbstain ? ' abstain-bubble' : ''}">
             <div class="status-tag ${isAnswered ? 'answered' : 'abstain'}">
               ${isAnswered ? '✅ Answered with Grounded Evidence' : '⚠️ Abstained: Insufficient Evidence'}
             </div>
             <div style="margin-top: 4px;">${formattedAnswer}</div>
+            ${abstainNote}
+            ${controllerWarning}
             <div class="msg-meta">
               <span>⏱️ Độ trễ: <b>${latency} ms</b></span>
               <span>📚 Kho: <b>${currentCorpus.toUpperCase()}</b></span>
@@ -789,7 +964,8 @@
           </div>
         `;
         chat.appendChild(agentRow);
-        chat.scrollTop = chat.scrollHeight;
+        // Smooth scroll to latest message
+        agentRow.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
       } catch (err) {
         const tRow = document.getElementById('typing-indicator-row');
@@ -800,18 +976,57 @@
         errRow.innerHTML = `
           <div class="message-avatar">⚠️</div>
           <div class="message-bubble" style="border-color: var(--red); color: #fca5a5;">
-            Lỗi kết nối đến máy chủ Agent: ${err.message}
+            Lỗi kết nối đến máy chủ Agent: ${escapeHtml(err.message)}
           </div>
         `;
         chat.appendChild(errRow);
+        errRow.scrollIntoView({ behavior: 'smooth', block: 'end' });
       } finally {
         sendBtn.disabled = false;
         input.focus();
       }
     }
 
+    async function refreshStatus() {
+      const label = document.getElementById('gemini-status');
+      try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        if (!response.ok) throw new Error(status.error || 'Server unavailable');
+        label.textContent = status.gemini ? 'Google Gemini configured' : 'Offline extractive fallback';
+      } catch (_) {
+        label.textContent = 'Agent status unavailable';
+      }
+    }
+
+    async function openUsagePopup() {
+      document.getElementById('usage-overlay').classList.add('visible');
+      try {
+        const resp = await fetch('/api/usage');
+        const data = await resp.json();
+        document.getElementById('usage-calls').textContent = data.call_count ?? '—';
+        document.getElementById('usage-prompt-tokens').textContent = data.total_prompt_tokens ?? '—';
+        document.getElementById('usage-candidate-tokens').textContent = data.total_candidates_tokens ?? '—';
+        document.getElementById('usage-cost').textContent = '$0.00 (Gemini free)';
+      } catch (_) {
+        document.getElementById('usage-calls').textContent = 'Error';
+      }
+    }
+
+    function closeUsagePopup(event) {
+      if (!event || event.target === document.getElementById('usage-overlay')) {
+        document.getElementById('usage-overlay').classList.remove('visible');
+      }
+    }
+
+    // Close popup on Escape key
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeUsagePopup();
+    });
+
     // Init
     renderSamplePrompts();
+    refreshStatus();
   </script>
 </body>
 </html>
